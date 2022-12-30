@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  
+  function userIsModerator(){
+    return request.auth.token.isModerator == true;
+  }
+
+  function documentFieldCheckout(requiredFields,optionnalFields) {
+    let allFields = requiredFields.concat(optionnalFields);
+    return request.resource.data.keys().hasAll(requiredFields) && 
+    request.resource.data.keys().hasOnly(allFields);
+  } 
+
+  function editOnlyChangesFields(allowedFields) {
+    let affectedKeys = request.resource.data.diff(resource.data).affectedKeys();
+    return affectedKeys.hasOnly(allowedFields);
+  }
+
+  match /databases/{database}/documents {
+
+    match /{document=**} {
+      allow read, write, update, create : if true;
+    }
+    
+    match /readonly/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /users/{userId} {
+      allow write: if (request.auth.uid == userId);
+    }
+    match /posts/{postId} {
+      
+      function postHasAllRequiredFields() {
+        let requiredFields = ["authorId","visibility", "content", "headline"];
+        return (request.resource.data.keys().hasAll(requiredFields));
+      }
+
+      function postHasOnlyAllowFields() {
+        let requiredFields = ["authorId", "visibility", "content", "headline"];
+        let optionnalFields = [ "photo", "tags", "location"];
+        let allFields = requiredFields.concat(optionnalFields);
+        return request.resource.data.keys().hasOnly(allFields);
+      }
+      
+
+      allow read: if (resource.data.visibility == "public") ||
+      (resource.data.authorId == request.auth.uid);
+      allow update: if (resource.data.authorId == request.auth.uid)
+      //&& editOnlyChangesFields("visibility", "content")
+      ;
+      allow create: if (request.resource.data.authorId == request.auth.uid) &&
+      documentFieldCheckout(["authorId","visibility", "content", "headline"],[ "photo", "tags", "location"]);
+    }
+  }
+}
